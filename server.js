@@ -1,7 +1,8 @@
 var express = require('express');
 var passport = require('passport');
 var Strategy = require('passport-facebook').Strategy;
-
+const request = require('request-promise');
+var config        = require('./config');
 
 // Configure the Facebook strategy for use by Passport.
 //
@@ -11,9 +12,9 @@ var Strategy = require('passport-facebook').Strategy;
 // with a user object, which will be set at `req.user` in route handlers after
 // authentication.
 passport.use(new Strategy({
-    clientID: process.env.CLIENT_ID,
-    clientSecret: process.env.CLIENT_SECRET,
-    callbackURL: 'http://localhost:3000/login/facebook/return'
+    clientID: config.facebook.appId,
+    clientSecret: config.facebook.appSecret,
+    callbackURL: 'http://localhost:3030/login/facebook/return'
   },
   function(accessToken, refreshToken, profile, cb) {
     // In this example, the user's Facebook profile is supplied as the user
@@ -21,6 +22,8 @@ passport.use(new Strategy({
     // be associated with a user record in the application's database, which
     // allows for account linking and authentication with other identity
     // providers.
+    console.log("the profile is", profile['id'])
+    console.log("the accessToken is", accessToken)
     return cb(null, profile);
   }));
 
@@ -62,6 +65,15 @@ app.use(require('express-session')({ secret: 'keyboard cat', resave: true, saveU
 app.use(passport.initialize());
 app.use(passport.session());
 
+// Add headers
+app.use((req, res, next) => {
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS, PUT, PATCH, DELETE');
+    res.setHeader('Access-Control-Allow-Headers', 'X-Requested-With,content-type');
+    res.setHeader('Access-Control-Allow-Credentials', true);
+    // Pass to next layer of middleware
+    next();
+});
 
 // Define routes.
 app.get('/',
@@ -75,12 +87,14 @@ app.get('/login',
   });
 
 app.get('/login/facebook',
-  passport.authenticate('facebook'));
+  passport.authenticate('facebook', {
+    scope: ['publish_actions', 'manage_pages', 'user_about_me']
+  }));
 
-app.get('/login/facebook/return', 
+app.get('/login/facebook/return',
   passport.authenticate('facebook', { failureRedirect: '/login' }),
   function(req, res) {
-    res.redirect('/');
+    res.redirect('/myInterest');
   });
 
 app.get('/profile',
@@ -89,4 +103,65 @@ app.get('/profile',
     res.render('profile', { user: req.user });
   });
 
-app.listen(3000);
+const userFieldSet = 'name, link, is_verified, picture';
+const pageFieldSet = 'name, category, link, picture, is_verified';
+
+console.log("the config user access token is", config.user_access_token);
+
+app.get('/myInterest', (req, res) => {
+
+  // you need permission for most of these fields
+  const userFieldSet = 'name, \
+  music.limit(10){name},\
+   movies.limit(10){name},\
+   books.limit(10){name},\
+   games.limit(10){name},\
+   television.limit(10){name}, \
+   likes.limit(10){name}';
+  console.log("the req params id are", req.params.id);
+  const options = {
+    method: 'GET',
+    uri: `https://graph.facebook.com/v2.9/me/`,
+    qs: {
+      access_token: config.user_access_token,
+      fields: userFieldSet
+    }
+  };
+  request(options)
+    .then(fbRes => {
+      console.log("the fbRes is", fbRes);
+      console.log(typeof(fbRes));
+      res.setHeader('Content-Type', 'application/json');
+      res.send(JSON.parse(fbRes));
+    })
+})
+
+app.get('/myFriendsInterest', (req, res) => {
+
+  // you need permission for most of these fields
+  const userFieldSet = 'name, \
+  music.limit(10){name},\
+   movies.limit(10){name},\
+   books.limit(10){name},\
+   games.limit(10){name},\
+   television.limit(10){name}, \
+   likes.limit(10){name}';
+  console.log("the req params id are", req.params.id);
+  const options = {
+    method: 'GET',
+    uri: `https://graph.facebook.com/v2.9/me/`,
+    qs: {
+      access_token: config.user_access_token,
+      fields: "friends.limit(100){name,music.limit(10){name},books.limit(10){name},games.limit(10){name},movies.limit(10){name},likes.limit(10){name}}"
+    }
+  };
+  request(options)
+    .then(fbRes => {
+      console.log("the fbRes is", fbRes);
+      console.log(typeof(fbRes));
+      res.setHeader('Content-Type', 'application/json');
+      res.send(JSON.parse(fbRes));
+    })
+})
+
+app.listen(3030);
